@@ -69,6 +69,14 @@ function mapRemoteMissions(remoteMissions: ApiMission[]): Mission[] {
   });
   return mapped;
 }
+function formatThreatLevel(threat: Mission['threat']): JarvisContext['missions'][number]['threat_level'] {
+  const formatted = threat.toUpperCase();
+  if (formatted === 'CRITICAL') return 'Critical';
+  if (formatted === 'HIGH') return 'High';
+  if (formatted === 'MEDIUM') return 'Medium';
+  if (formatted === 'LOW') return 'Low';
+  throw new Error(`Unknown mission threat level: ${threat}`);
+}
 function Picture({ src, name, className = '' }: { src?: string; name: string; className?: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
@@ -269,7 +277,7 @@ export default function App() {
         name: item.name,
         villain: villains[item.villain].name,
         location: item.location,
-        threat_level: item.threat,
+        threat_level: formatThreatLevel(item.threat),
         status: item.status === 'IN PROGRESS' ? 'In Progress' : item.status === 'COMPLETED' ? 'Completed' : 'Pending',
       })),
       selected_mission: missions[mission]?.name ?? null,

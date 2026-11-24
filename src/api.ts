@@ -21,7 +21,7 @@ export type ApiMission = {
   name: string;
   villain: string;
   location: string;
-  threat_level: string;
+  threat_level: "Low" | "Medium" | "High" | "Critical";
   description: string;
   status: "Pending" | "In Progress" | "Completed";
   teams: {

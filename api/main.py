@@ -45,6 +45,11 @@ class MissionSummary(BaseModel):
     threat_level: Literal["Low", "Medium", "High", "Critical"]
     status: Literal["Pending", "In Progress", "Completed"]
 
+    @field_validator("threat_level", mode="before")
+    @classmethod
+    def normalize_threat_level(cls, value: object) -> object:
+        return value.strip().title() if isinstance(value, str) else value
+
 
 class JarvisContext(BaseModel):
     heroes: list[HeroSummary] = Field(default_factory=list, max_length=12)

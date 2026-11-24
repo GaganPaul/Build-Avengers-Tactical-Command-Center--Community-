@@ -66,6 +66,28 @@ class ApiTests(unittest.TestCase):
             {"reply": "At your service.", "model": "gemini-3.5-flash-lite"},
         )
 
+    def test_jarvis_chat_normalizes_uppercase_threat_from_frontend(self):
+        with patch("api.main._generate_jarvis_reply", return_value="Threat assessment ready."):
+            response = self.client.post(
+                "/api/jarvis/chat",
+                json={
+                    "message": "Assess current threats",
+                    "context": {
+                        "missions": [
+                            {
+                                "name": "Operation Infinity",
+                                "villain": "Thanos",
+                                "location": "New York",
+                                "threat_level": "CRITICAL",
+                                "status": "Pending",
+                            }
+                        ]
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+
     def test_gemini_request_uses_configured_flash_lite_model(self):
         client = unittest.mock.MagicMock()
         client.models.generate_content.return_value.text = "Threat assessment ready."
