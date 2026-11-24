@@ -1,5 +1,9 @@
 {
+  "title": "Avengers Tactical Command Center",
   "description": "Manage Avengers squads, assign heroes to global threats, and play turn-based superhero battles in an interactive tactical command center.",
+  "icons": {
+    "icon": "/brand/avengers-mark.png"
+  },
   "robots": {
     "index": false
   },

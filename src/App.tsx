@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from 'motion/react';
 import { Activity, ArrowDown, ArrowLeft, ArrowRight, Bot, Check, ChevronRight, Cpu, Crosshair, Crown, Flame, Globe2, Heart, MapPin, Menu, Search, Send, Shield, ShieldCheck, Skull, Sparkles, Swords, Users, X, Zap } from 'lucide-react';
+import { apiRequest, type ApiHealth, type ApiHero, type ApiMission, type JarvisContext } from './api';
 
 const gold = '#cfb078';
 const frame = 'border border-[#c5a56d]/20 bg-[#121310]/85';
 const btn = 'inline-flex min-h-11 items-center justify-center gap-2 border border-[#c5a56d]/40 px-5 py-3 text-xs font-medium uppercase tracking-[.16em] transition duration-300 hover:border-[#dec18a] hover:bg-[#c5a56d]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#dec18a] disabled:cursor-not-allowed disabled:opacity-50';
 const primary = `${btn} border-[#c5a56d] bg-[#cfb078] text-[#16150f] hover:bg-[#e4c998] hover:text-black`;
+const avengersLogo = '/brand/avengers-mark.png';
 const art = (name: string) => `/art/${name.toLowerCase().replace(/ /g, '-')}.${name === 'Zemo' || name === 'Maximus' ? 'svg' : 'jpg'}`;
 const heroes = [
   { name: 'Iron Man', real: 'Tony Stark', title: 'The futurist', power: 'Repulsor Blast', hp: 240, attack: 44, defence: 16, speed: 80, intelligence: 100, bio: 'Genius. Inventor. Avenger. Behind the armor is a man determined to build a better world—even if he has to save it first.' },
@@ -38,13 +40,35 @@ const initialMissions = [
   { name: 'Operation Ultron', villain: 5, location: 'Washington DC', threat: 'HIGH', scene: '/art/laboratory.png', desc: 'A world built in his image. Break Ultron’s network before humanity becomes a memory.', status: 'PENDING', team: [] as number[] },
   { name: 'Operation Loki', villain: 2, location: 'New Mexico', threat: 'MEDIUM', scene: '/art/asgard.png', desc: 'An ancient power. A familiar deception. Close the portal and end the trickster’s reign.', status: 'PENDING', team: [] as number[] },
 ];
-type Mission = typeof initialMissions[number];
+type Mission = typeof initialMissions[number] & { databaseId?: string; teamId?: string };
 type Fighter = { id: number; hp: number; energy: number; cooldown: number; guard: boolean };
 type Battle = { fighters: Fighter[]; enemyHP: number; round: number; acted: number[]; log: string[]; result: string; popup: string; enemyTurn: boolean };
 const chapters = ['The World', 'The Heroes', 'The Assembly', 'The Quest', 'The Deployment', 'The Battle', 'The Chronicles', 'JARVIS'];
 const subtitles = ['Earth’s last line of defense.', 'Extraordinary is only the beginning.', 'Alone, remarkable. Together, unstoppable.', 'Every world needs its defenders.', 'Purpose gives power its direction.', 'Legends are forged in battle.', 'Every victory becomes a story.', 'Your tactical intelligence interface.'];
 const numerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 function load<T,>(key: string, fallback: T): T { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch { return fallback; } }
+function mapRemoteMissions(remoteMissions: ApiMission[]): Mission[] {
+  const mapped = initialMissions.map(initial => {
+    const remote = remoteMissions.find(item => item.name === initial.name);
+    if (!remote) throw new Error(`Supabase is missing the seeded mission "${initial.name}".`);
+    const villainIndex = villains.findIndex(item => item.name === remote.villain);
+    if (villainIndex < 0) throw new Error(`Unknown villain "${remote.villain}" in mission "${remote.name}".`);
+    const assignment = remote.teams.find(item => item.heroes.length > 0);
+    const members = assignment?.heroes.map(member => heroes.findIndex(hero => hero.name === member.name)) ?? [];
+    return {
+      ...initial,
+      villain: villainIndex,
+      location: remote.location,
+      threat: remote.threat_level.toUpperCase(),
+      desc: remote.description || initial.desc,
+      status: remote.status.toUpperCase().replace(/ /g, '_'),
+      team: members.filter(id => id >= 0),
+      databaseId: remote.id,
+      teamId: assignment?.id,
+    };
+  });
+  return mapped;
+}
 function Picture({ src, name, className = '' }: { src?: string; name: string; className?: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
@@ -99,21 +123,56 @@ export default function App() {
     const previous = load<{ status: string; team: number[] }[]>('shield-missions', []);
     return initialMissions.map((m, i) => ({ ...m, status: previous[i]?.status || m.status, team: previous[i]?.team || [] }));
   });
+  const [heroIds, setHeroIds] = useState<Record<string, string>>({});
+  const [heroStatuses, setHeroStatuses] = useState<ApiHero['status'][]>(heroes.map(() => 'Available'));
+  const [backendTeamId, setBackendTeamId] = useState(() => load('shield-team-id', ''));
+  const [apiReady, setApiReady] = useState(false), [geminiReady, setGeminiReady] = useState(false);
+  const [apiError, setApiError] = useState(''), [aiModel, setAiModel] = useState('gemini-3.5-flash-lite');
+  const [apiBusy, setApiBusy] = useState(false), [jarvisBusy, setJarvisBusy] = useState(false);
   const [mission, setMission] = useState(0), [enemy, setEnemy] = useState(4), [gallery, setGallery] = useState(false);
   const [heroModal, setHeroModal] = useState<number | null>(null), [detail, setDetail] = useState<number | null>(null);
   const [toast, setToast] = useState(''), [timeline, setTimeline] = useState<string[]>(['The Avengers Initiative is active. The world is watching.']);
   const [battle, setBattle] = useState<Battle | null>(null), [active, setActive] = useState(0), [heroOffset, setHeroOffset] = useState(0);
   const [villainOffset, setVillainOffset] = useState(0), [jarvisInput, setJarvisInput] = useState('');
   const [jarvisMessages, setJarvisMessages] = useState<{ role: 'user' | 'jarvis'; text: string }[]>([
-    { role: 'jarvis', text: 'Good evening, Director. JARVIS online. I can assess threats, recommend a squad, explain combat systems, or open any command module.' },
+    { role: 'jarvis', text: 'Good evening, Director. The JARVIS tactical console is ready. I can assess threats, recommend a squad, or explain combat systems.' },
   ]);
   const content = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion(), { scrollY } = useScroll(), parallax = useTransform(scrollY, [0, 850], [0, 170]);
-  const assigned = missions.filter(m => m.status === 'IN PROGRESS').flatMap(m => m.team);
+  const assigned = apiReady
+    ? heroStatuses.flatMap((status, id) => status === 'Assigned' ? [id] : [])
+    : missions.filter(m => m.status === 'IN PROGRESS').flatMap(m => m.team);
   const available = heroes.length - new Set(assigned).size;
   const go = (p: number) => { setPage(p); setMobile(false); setQuery(''); setFilter('ALL'); window.scrollTo({ top: 0, behavior: reduce ? 'instant' : 'smooth' }); };
   const notify = (text: string) => { setToast(text); setTimeline(t => [`${new Date().toLocaleTimeString()} · ${text}`, ...t].slice(0, 20)); };
-  useEffect(() => { try { localStorage.setItem('shield-team', JSON.stringify(team)); localStorage.setItem('shield-name', JSON.stringify(teamName)); localStorage.setItem('shield-quests-v2', JSON.stringify(missions)); } catch { /* Local state remains usable without storage. */ } }, [team, teamName, missions]);
+  const refreshBackendData = async () => {
+    const health = await apiRequest<ApiHealth>('/health');
+    setGeminiReady(health.gemini_configured);
+    setAiModel(health.model);
+    if (!health.supabase_configured) throw new Error('Supabase credentials are missing. Add them to the ignored .env file or Render environment.');
+    const [remoteHeroes, remoteMissions] = await Promise.all([
+      apiRequest<ApiHero[]>('/heroes'),
+      apiRequest<ApiMission[]>('/missions'),
+    ]);
+    const idsByName: Record<string, string> = {};
+    for (const hero of remoteHeroes) idsByName[hero.name] = hero.id;
+    const missingHeroes = heroes.filter(hero => !idsByName[hero.name]).map(hero => hero.name);
+    if (missingHeroes.length) throw new Error(`Supabase is missing seeded heroes: ${missingHeroes.join(', ')}.`);
+    const statuses = heroes.map(hero => remoteHeroes.find(item => item.name === hero.name)!.status);
+    const syncedMissions = mapRemoteMissions(remoteMissions);
+    setHeroIds(idsByName);
+    setHeroStatuses(statuses);
+    setMissions(syncedMissions);
+    setApiReady(true);
+    setApiError('');
+  };
+  useEffect(() => {
+    void refreshBackendData().catch(error => {
+      setApiReady(false);
+      setApiError(error instanceof Error ? error.message : 'The command backend could not be reached.');
+    });
+  }, []);
+  useEffect(() => { try { localStorage.setItem('shield-team', JSON.stringify(team)); localStorage.setItem('shield-name', JSON.stringify(teamName)); localStorage.setItem('shield-quests-v2', JSON.stringify(missions)); localStorage.setItem('shield-team-id', JSON.stringify(backendTeamId)); } catch { /* Local state remains usable without storage. */ } }, [team, teamName, missions, backendTeamId]);
   useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(''), 5000); return () => clearTimeout(timer); } }, [toast]);
   useEffect(() => {
     if (page !== 0 || reduce) return;
@@ -123,27 +182,117 @@ export default function App() {
   }, [page, reduce]);
   const toggle = (id: number) => setSelected(s => s.includes(id) ? s.filter(i => i !== id) : [...s, id]);
   const chooseMission = (i: number) => { setMission(i); setEnemy(missions[i].villain); setBattle(null); };
-  const askJarvis = (prompt = jarvisInput) => {
-    const text = prompt.trim();
-    if (!text) return;
-    const lower = text.toLowerCase();
-    let answer = `I have indexed that request. Current command status: ${missions.filter(m => m.status !== 'COMPLETED').length} active operations, ${available} heroes available, and ${villains[enemy].name} selected in the combat simulator.`;
-    if (lower.includes('team') || lower.includes('squad') || lower.includes('hero')) answer = `Recommended formation: ${heroes.slice().sort((a, b) => b.attack + b.defence - a.attack - a.defence).slice(0, 4).map(h => h.name).join(', ')}. This balances raw power, defense, and tactical intelligence.`;
-    else if (lower.includes('threat') || lower.includes('mission')) answer = `${missions[mission].name} is the priority. Threat level ${missions[mission].threat}; target ${villains[missions[mission].villain].name} in ${missions[mission].location}. A minimum four-hero deployment is advised.`;
-    else if (lower.includes('battle') || lower.includes('fight') || lower.includes('win')) answer = 'Combat recommendation: build energy with standard attacks, defend before every third enemy round, then combine three charged heroes for Avengers Assemble. Preserve your fastest hero for the opening strike.';
-    else if (lower.includes('hello') || lower.includes('hi')) answer = 'At your service, Director. All systems are operational. Shall we review the active threat matrix or prepare a battle simulation?';
-    setJarvisMessages(messages => [...messages, { role: 'user', text }, { role: 'jarvis', text: answer }]);
-    setJarvisInput('');
+  const assembleTeam = async () => {
+    if (!apiReady || apiBusy || selected.length < 4 || !teamName.trim()) return;
+    const selectedIds = selected.map(id => heroIds[heroes[id].name]);
+    if (selectedIds.some(id => !id)) return notify('One or more selected Avengers are not available in the database.');
+    setApiBusy(true);
+    try {
+      const created = await apiRequest<{ id: string; team_name: string }>('/teams', {
+        method: 'POST',
+        body: JSON.stringify({ name: teamName.trim(), hero_ids: selectedIds }),
+      });
+      setTeam([...selected]);
+      setBackendTeamId(created.id);
+      notify(`${created.team_name} assembled and saved to the command database.`);
+      await refreshBackendData();
+    } catch (error) {
+      notify(`Team could not be saved: ${error instanceof Error ? error.message : 'Backend error.'}`);
+    } finally {
+      setApiBusy(false);
+    }
   };
-  const updateStatus = (i: number, status: string) => {
-    if (status === 'IN PROGRESS' && (!missions[i].team.length || missions[i].team.some(id => missions.some((m, index) => index !== i && m.status === 'IN PROGRESS' && m.team.includes(id))))) { chooseMission(i); go(4); notify('Allocate an available squad before deployment.'); return; }
-    setMissions(ms => ms.map((m, index) => index === i ? { ...m, status } : m));
-    notify(`${missions[i].name}: ${status === 'COMPLETED' ? 'mission accomplished. Your heroes return.' : status.toLowerCase()}`);
-  };
-  const allocate = () => {
+  const allocate = async () => {
     if (team.length < 4 || team.some(i => assigned.includes(i))) return notify('Assemble at least four available heroes to deploy.');
-    setMissions(ms => ms.map((m, i) => i === mission ? { ...m, team: [...team], status: 'IN PROGRESS' } : m));
-    notify(`${teamName} deployed. ${missions[mission].name} is in progress.`);
+    if (!apiReady || !backendTeamId || !missions[mission].databaseId || apiBusy) return notify('Save a squad and connect the command database before deployment.');
+    setApiBusy(true);
+    try {
+      await apiRequest(`/missions/${missions[mission].databaseId}/allocate`, {
+        method: 'POST',
+        body: JSON.stringify({ team_id: backendTeamId }),
+      });
+      await refreshBackendData();
+      notify(`${teamName} deployed. ${missions[mission].name} is in progress.`);
+    } catch (error) {
+      notify(`Deployment failed: ${error instanceof Error ? error.message : 'Backend error.'}`);
+    } finally {
+      setApiBusy(false);
+    }
+  };
+  const updateStatus = async (i: number, status: string) => {
+    const selectedMission = missions[i];
+    if (status === 'IN PROGRESS' && (!selectedMission.team.length || !selectedMission.databaseId)) {
+      chooseMission(i);
+      go(4);
+      notify('Choose and deploy a saved squad before starting this mission.');
+      return;
+    }
+    if (!apiReady || !selectedMission.databaseId || apiBusy) return notify('Connect the command database before updating mission status.');
+    setApiBusy(true);
+    try {
+      if (status === 'IN PROGRESS') {
+        const teamId = selectedMission.teamId || backendTeamId;
+        if (!teamId) throw new Error('Save a squad before deploying.');
+        await apiRequest(`/missions/${selectedMission.databaseId}/allocate`, {
+          method: 'POST',
+          body: JSON.stringify({ team_id: teamId }),
+        });
+      } else {
+        const databaseStatus = status === 'COMPLETED' ? 'Completed' : 'Pending';
+        await apiRequest(`/missions/${selectedMission.databaseId}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: databaseStatus }),
+        });
+      }
+      await refreshBackendData();
+      notify(`${selectedMission.name}: ${status === 'COMPLETED' ? 'mission accomplished. Your heroes return.' : status.toLowerCase()}`);
+    } catch (error) {
+      notify(`Mission update failed: ${error instanceof Error ? error.message : 'Backend error.'}`);
+    } finally {
+      setApiBusy(false);
+    }
+  };
+  const askJarvis = async (prompt = jarvisInput) => {
+    const text = prompt.trim();
+    if (!text || jarvisBusy) return;
+    const history = jarvisMessages.map(message => ({
+      role: message.role === 'jarvis' ? 'assistant' as const : 'user' as const,
+      content: message.text,
+    })).slice(-12);
+    const context: JarvisContext = {
+      heroes: heroes.map((hero, index) => ({
+        name: hero.name,
+        real_name: hero.real,
+        status: heroStatuses[index],
+      })),
+      missions: missions.map(item => ({
+        name: item.name,
+        villain: villains[item.villain].name,
+        location: item.location,
+        threat_level: item.threat,
+        status: item.status === 'IN PROGRESS' ? 'In Progress' : item.status === 'COMPLETED' ? 'Completed' : 'Pending',
+      })),
+      selected_mission: missions[mission]?.name ?? null,
+      selected_adversary: villains[enemy]?.name ?? null,
+      battle_summary: battle ? `Round ${battle.round}; ${battle.enemyHP} enemy HP remaining; ${battle.result || 'battle in progress'}. Recent events: ${battle.log.slice(0, 4).join(' | ')}` : null,
+    };
+    setJarvisMessages(messages => [...messages, { role: 'user', text }]);
+    setJarvisInput('');
+    setJarvisBusy(true);
+    try {
+      const result = await apiRequest<{ reply: string; model: string }>('/jarvis/chat', {
+        method: 'POST',
+        body: JSON.stringify({ message: text, history, context }),
+      });
+      setJarvisMessages(messages => [...messages, { role: 'jarvis', text: result.reply }]);
+    } catch (error) {
+      setJarvisMessages(messages => [...messages, {
+        role: 'jarvis',
+        text: `Unable to reach JARVIS: ${error instanceof Error ? error.message : 'The backend request failed.'}`,
+      }]);
+    } finally {
+      setJarvisBusy(false);
+    }
   };
   const startBattle = () => {
     const ids = (team.length >= 4 ? team : [0, 1, 2, 3]).slice().sort((a, b) => heroes[b].speed - heroes[a].speed);
@@ -190,9 +339,10 @@ export default function App() {
   return <div className="min-h-screen overflow-x-hidden bg-[#0b0c0a] font-sans text-[#eee9df] selection:bg-[#c5a56d]/40">
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-40 bg-[url('data:image/svg+xml,%3Csvg%20viewBox=%220%200%20180%20180%22%20xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter%20id=%22n%22%3E%3CfeTurbulence%20type=%22fractalNoise%22%20baseFrequency=%22.9%22%20numOctaves=%223%22%20stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Cpath%20fill=%22%23fff%22%20opacity=%22.025%22%20filter=%22url(%23n)%22%20d=%22M0%200h180v180H0z%22/%3E%3C/svg%3E')]" />
     <header className="absolute inset-x-0 top-0 z-30 border-b border-[#cfb078]/20 bg-gradient-to-b from-black/65 to-transparent">
-      <div className="mx-auto flex h-24 max-w-[1600px] items-center justify-between gap-5 px-5 md:px-10 xl:px-16"><button onClick={() => go(0)} className="flex min-h-11 shrink-0 items-center gap-3" aria-label="S.H.I.E.L.D. home"><span className="h-12 w-12 overflow-hidden rounded-full border border-[#c5a56d]/70 shadow-[0_0_22px_#dcaa5c55]"><img src="/brand/avengers-logo.png" alt="" className="h-full w-full object-cover object-center" /></span><span className="text-left"><span className="block font-display text-xl tracking-[.2em] text-[#e4c999]">S.H.I.E.L.D.</span><span className="mt-1 block text-xs tracking-[.22em] text-stone-300">THE AVENGERS INITIATIVE</span></span></button><nav className="hidden items-center gap-4 lg:flex xl:gap-6">{chapters.map((name, i) => <button key={name} onClick={() => go(i)} aria-current={page === i ? 'page' : undefined} className={`relative min-h-12 whitespace-nowrap text-xs tracking-[.05em] transition hover:text-[#e4c999] ${page === i ? 'text-[#e4c999]' : 'text-stone-300'}`}>{name}{page === i && <span className="absolute inset-x-2 bottom-1 h-px bg-[#c5a56d]" />}</button>)}</nav><button onClick={() => go(2)} className={`${btn} hidden shrink-0 px-4 2xl:inline-flex`}>Assemble <ArrowRight size={14} /></button><button onClick={() => setMobile(!mobile)} aria-label="Toggle navigation" aria-expanded={mobile} className={`${btn} px-3 lg:hidden`}>{mobile ? <X size={22} /> : <Menu size={22} />}</button></div>
+      <div className="mx-auto flex h-24 max-w-[1600px] items-center justify-between gap-5 px-5 md:px-10 xl:px-16"><button onClick={() => go(0)} className="flex min-h-11 shrink-0 items-center gap-3" aria-label="Avengers home"><span className="h-12 w-12 overflow-hidden rounded-full border border-[#c5a56d]/70 shadow-[0_0_22px_#dcaa5c55]"><img src={avengersLogo} alt="" className="h-full w-full object-cover object-center" /></span><span className="text-left"><span className="block font-display text-xl tracking-[.2em] text-[#e4c999]">AVENGERS</span><span className="mt-1 block text-xs tracking-[.22em] text-stone-300">THE AVENGERS INITIATIVE</span></span></button><nav className="hidden items-center gap-4 lg:flex xl:gap-6">{chapters.map((name, i) => <button key={name} onClick={() => go(i)} aria-current={page === i ? 'page' : undefined} className={`relative min-h-12 whitespace-nowrap text-xs tracking-[.05em] transition hover:text-[#e4c999] ${page === i ? 'text-[#e4c999]' : 'text-stone-300'}`}>{name}{page === i && <span className="absolute inset-x-2 bottom-1 h-px bg-[#c5a56d]" />}</button>)}</nav><button onClick={() => go(2)} className={`${btn} hidden shrink-0 px-4 2xl:inline-flex`}>Assemble <ArrowRight size={14} /></button><button onClick={() => setMobile(!mobile)} aria-label="Toggle navigation" aria-expanded={mobile} className={`${btn} px-3 lg:hidden`}>{mobile ? <X size={22} /> : <Menu size={22} />}</button></div>
       {mobile && <nav className="border-t border-[#c5a56d]/20 bg-[#0d0e0c] px-6 py-4 lg:hidden">{chapters.map((name, i) => <button key={name} onClick={() => go(i)} className={`block min-h-12 w-full border-b border-[#c5a56d]/10 text-left text-sm ${page === i ? 'text-[#dfc18c]' : 'text-stone-300'}`}><span className="mr-4 font-display text-[#c5a56d]">{numerals[i]}.</span>{name}</button>)}</nav>}
     </header>
+    {apiError && <div role="alert" className="relative z-20 border-b border-amber-300/25 bg-amber-950/85 px-5 py-3 text-center text-xs leading-5 text-amber-100 md:text-sm">{apiError} Check <code className="rounded bg-black/30 px-1.5 py-0.5">.env</code> locally or set the same variables in Render.</div>}
     <AnimatePresence mode="wait"><motion.div key={page} initial={{ y: reduce ? 0 : 8 }} animate={{ y: 0 }} exit={{ opacity: reduce ? 1 : 0 }} transition={{ duration: .25 }}>
       {page === 0 ? <section className="relative isolate flex min-h-[850px] flex-col justify-center overflow-hidden md:min-h-[max(820px,100svh)]">
         <motion.div style={{ y: reduce ? 0 : parallax }} className="absolute -inset-x-4 -top-4 bottom-0 -z-20"><Picture src="/art/avengers-cinematic.jpg" name="The Avengers assembled against a cinematic battlefield" className="h-full w-full object-[60%_center] brightness-[.65] saturate-[.55] md:object-center" /></motion.div>
@@ -228,10 +378,10 @@ export default function App() {
         {(page === 1 || page === 2) && <>
           <div className="mb-8 flex flex-wrap items-center justify-between gap-4">{page === 1 ? <><label className="flex min-h-12 min-w-0 flex-1 items-center gap-3 border-b border-[#c5a56d]/30"><Search size={18} className="text-[#d8bb83]" /><input aria-label="Search heroes" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search a hero, identity, or power..." className="w-full bg-transparent py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#c5a56d]" /></label><select aria-label="Filter hero availability" value={filter} onChange={e => setFilter(e.target.value)} className={`${btn} bg-[#141510]`}><option value="ALL">All heroes</option><option>AVAILABLE</option><option>ASSIGNED</option></select></> : <><p className="text-sm text-stone-300">Choose at least <span className="text-[#dfc18c]">four Avengers</span>. Greatness is never a solitary pursuit.</p><span className="font-display text-3xl text-[#dfc18c]">{selected.length}<span className="ml-2 text-base text-stone-300">/ 6 chosen</span></span></>}</div>
           <div className="grid gap-6 md:grid-cols-3">{galleryHeroes.map(h => heroCard(h.id, page === 2))}</div>{!galleryHeroes.length && <p className="py-20 text-center text-stone-300">No heroes match your search.</p>}
-          {page === 2 && <section className={`${frame} mt-10 p-6 md:p-9`}><p className="mb-3 text-xs uppercase tracking-[.2em] text-[#dfc18c]">Your chosen few</p><h2 className="font-display text-3xl">The beginning of something greater.</h2><div className="my-6 grid gap-4 md:grid-cols-2">{selected.map(id => <div key={id} className="flex items-center gap-4 border-b border-[#c5a56d]/15 pb-4"><Picture name={heroes[id].name} className="h-16 w-14 object-top" /><div className="min-w-0 flex-1"><div className="mb-2 flex justify-between gap-2 text-sm"><span>{heroes[id].name}</span><span className="text-[#d8bd8b]">{heroes[id].hp} HP</span></div><Bar value={100} /><p className="mt-2 text-xs text-stone-300">{heroes[id].power}</p></div><button aria-label={`Remove ${heroes[id].name}`} className={`${btn} px-3`} onClick={() => toggle(id)}><X size={14} /></button></div>)}</div><div className="flex flex-wrap gap-4"><input aria-label="Team name" maxLength={40} value={teamName} onChange={e => setTeamName(e.target.value)} placeholder="Name your team" className={`${btn} min-w-0 flex-1 bg-black/20 text-sm normal-case tracking-normal`} /><button disabled={selected.length < 4 || !teamName.trim()} className={primary} onClick={() => { setTeam([...selected]); notify(`${teamName} assembled. ${selected.length} heroes, one purpose.`); }}>Assemble team <ArrowRight size={15} /></button></div><p className="mt-4 text-xs text-stone-300">Saved in this browser. {team.length > 0 ? `Current squad: ${team.length} Avengers.` : 'Select four heroes to unlock your team.'}</p></section>}
+          {page === 2 && <section className={`${frame} mt-10 p-6 md:p-9`}><p className="mb-3 text-xs uppercase tracking-[.2em] text-[#dfc18c]">Your chosen few</p><h2 className="font-display text-3xl">The beginning of something greater.</h2><div className="my-6 grid gap-4 md:grid-cols-2">{selected.map(id => <div key={id} className="flex items-center gap-4 border-b border-[#c5a56d]/15 pb-4"><Picture name={heroes[id].name} className="h-16 w-14 object-top" /><div className="min-w-0 flex-1"><div className="mb-2 flex justify-between gap-2 text-sm"><span>{heroes[id].name}</span><span className="text-[#d8bd8b]">{heroes[id].hp} HP</span></div><Bar value={100} /><p className="mt-2 text-xs text-stone-300">{heroes[id].power}</p></div><button aria-label={`Remove ${heroes[id].name}`} className={`${btn} px-3`} onClick={() => toggle(id)}><X size={14} /></button></div>)}</div><div className="flex flex-wrap gap-4"><input aria-label="Team name" maxLength={40} value={teamName} onChange={e => setTeamName(e.target.value)} placeholder="Name your team" className={`${btn} min-w-0 flex-1 bg-black/20 text-sm normal-case tracking-normal`} /><button disabled={selected.length < 4 || !teamName.trim() || !apiReady || apiBusy} className={primary} onClick={assembleTeam}>Assemble team <ArrowRight size={15} /></button></div><p className="mt-4 text-xs text-stone-300">{apiReady ? 'Teams are saved to Supabase.' : 'Connect Supabase to save and deploy your team.'} {team.length > 0 ? `Current squad: ${team.length} Avengers.` : 'Select four heroes to unlock your team.'}</p></section>}
         </>}
         {page === 3 && <><div className="mb-8 flex flex-wrap items-center justify-between gap-4"><p className="text-sm text-stone-300">Three threats. Countless lives. Your move, Director.</p><button className={btn} onClick={() => { setQuery(''); setGallery(true); }}><Skull size={16} />The adversaries / 25</button></div><div className="grid gap-6 md:grid-cols-3">{missions.map(missionCard)}</div><div className={`${frame} mt-10 flex flex-wrap items-center justify-between gap-5 p-7`}><div><p className="mb-2 text-xs uppercase tracking-[.2em] text-[#dfc18c]">Beyond the known horizon</p><h2 className="font-display text-2xl">Twenty-five enemies. One world to protect.</h2><p className="mt-3 text-sm text-stone-300">Study their powers, choose your opponent, and test your squad in the arena.</p></div><button className={primary} onClick={() => setGallery(true)}>Open villain archive <ArrowRight size={16} /></button></div></>}
-        {page === 4 && <div className="grid gap-8 lg:grid-cols-[1.15fr_1fr]"><section className={`${frame} p-6 md:p-9`}><p className="text-xs uppercase tracking-[.2em] text-[#dfc18c]">The right people. The right purpose.</p><h2 className="mb-8 mt-3 font-display text-3xl">Choose your deployment.</h2><label htmlFor="squad" className="mb-3 block text-sm text-stone-300">Your assembled squad</label><select id="squad" className={`${btn} w-full bg-[#171811]`}><option>{team.length ? `${teamName} / ${team.length} heroes` : 'No team assembled yet'}</option></select>{!team.length && <button className={`${btn} mt-4`} onClick={() => go(2)}>Begin the assembly <ArrowRight size={15} /></button>}<label htmlFor="objective" className="mb-3 mt-7 block text-sm text-stone-300">Mission objective</label><select id="objective" className={`${btn} w-full bg-[#171811]`} value={mission} onChange={e => chooseMission(Number(e.target.value))}>{missions.map((m, i) => <option key={m.name} value={i}>{m.name} / {m.threat}</option>)}</select><div className="mt-7 space-y-4">{team.map(id => <div key={id} className="flex items-center gap-4 border-b border-[#c5a56d]/15 pb-4"><Picture name={heroes[id].name} className="h-14 w-12 object-top" /><span className="flex-1 text-sm">{heroes[id].name}</span><Badge>{assigned.includes(id) ? 'ASSIGNED' : 'AVAILABLE'}</Badge></div>)}</div><button className={`${primary} mt-8 w-full`} disabled={team.length < 4 || team.some(id => assigned.includes(id)) || missions[mission].status !== 'PENDING'} onClick={allocate}>Deploy the Avengers <ArrowRight size={16} /></button><p className="mt-4 text-xs leading-6 text-stone-300">Heroes on active duty cannot be assigned elsewhere. Complete their mission to bring them home.</p>{missions[mission].status === 'IN PROGRESS' && <button className={`${btn} mt-4 w-full`} onClick={() => { setEnemy(missions[mission].villain); setBattle(null); go(5); }}>Enter mission battle <Swords size={16} /></button>}</section><div>{missionCard(missions[mission], mission)}</div></div>}
+        {page === 4 && <div className="grid gap-8 lg:grid-cols-[1.15fr_1fr]"><section className={`${frame} p-6 md:p-9`}><p className="text-xs uppercase tracking-[.2em] text-[#dfc18c]">The right people. The right purpose.</p><h2 className="mb-8 mt-3 font-display text-3xl">Choose your deployment.</h2><label htmlFor="squad" className="mb-3 block text-sm text-stone-300">Your assembled squad</label><select id="squad" className={`${btn} w-full bg-[#171811]`}><option>{team.length ? `${teamName} / ${team.length} heroes` : 'No team assembled yet'}</option></select>{!team.length && <button className={`${btn} mt-4`} onClick={() => go(2)}>Begin the assembly <ArrowRight size={15} /></button>}<label htmlFor="objective" className="mb-3 mt-7 block text-sm text-stone-300">Mission objective</label><select id="objective" className={`${btn} w-full bg-[#171811]`} value={mission} onChange={e => chooseMission(Number(e.target.value))}>{missions.map((m, i) => <option key={m.name} value={i}>{m.name} / {m.threat}</option>)}</select><div className="mt-7 space-y-4">{team.map(id => <div key={id} className="flex items-center gap-4 border-b border-[#c5a56d]/15 pb-4"><Picture name={heroes[id].name} className="h-14 w-12 object-top" /><span className="flex-1 text-sm">{heroes[id].name}</span><Badge>{assigned.includes(id) ? 'ASSIGNED' : 'AVAILABLE'}</Badge></div>)}</div><button className={`${primary} mt-8 w-full`} disabled={!apiReady || !backendTeamId || apiBusy || team.length < 4 || team.some(id => assigned.includes(id)) || missions[mission].status !== 'PENDING'} onClick={allocate}>Deploy the Avengers <ArrowRight size={16} /></button><p className="mt-4 text-xs leading-6 text-stone-300">Heroes on active duty cannot be assigned elsewhere. Complete their mission to bring them home.</p>{missions[mission].status === 'IN PROGRESS' && <button className={`${btn} mt-4 w-full`} onClick={() => { setEnemy(missions[mission].villain); setBattle(null); go(5); }}>Enter mission battle <Swords size={16} /></button>}</section><div>{missionCard(missions[mission], mission)}</div></div>}
         {page === 5 && <>
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-4"><Badge>{battle ? `ROUND ${battle.round}` : 'ARENA READY'}</Badge><span className="text-sm text-stone-300">Adversary / <span className="text-[#dfc18c]">{villains[enemy].name}</span></span></div><div className="flex gap-3"><button className={btn} onClick={() => { setQuery(''); setGallery(true); }}>Choose adversary</button><button className={primary} onClick={startBattle}>{battle ? 'Restart battle' : 'Begin battle'}<Swords size={15} /></button></div></div>
           <div className="grid gap-6 xl:grid-cols-[1fr_280px]"><section className={`${frame} relative isolate min-w-0 overflow-hidden p-4 md:p-7`}><Picture src="/art/battlefield.png" name="Cinematic battlefield" className="absolute inset-0 -z-20 h-full w-full brightness-[.18] saturate-[.4]" /><div className="absolute inset-0 -z-10 bg-[#0b0c0a]/55" />
@@ -243,17 +393,17 @@ export default function App() {
             </>}
           </section><aside className={`${frame} min-w-0 p-6`}><p className="text-xs uppercase tracking-[.2em] text-[#dfc18c]">From the front line</p><h2 className="mb-6 mt-3 font-display text-2xl">The battle record.</h2><div role="log" aria-live="polite" className="max-h-[650px] space-y-5 overflow-y-auto pr-1">{(battle?.log || ['Awaiting your command.', 'A secure simulation. An extraordinary challenge.']).map((entry, i) => <p key={`${i}-${entry}`} className="border-l border-[#c5a56d]/30 pl-3 text-sm leading-6 text-stone-300">{entry}</p>)}</div></aside></div>
         </>}
-        {page === 6 && <><div className="grid gap-6 lg:grid-cols-3">{['PENDING', 'IN PROGRESS', 'COMPLETED'].map(status => <section key={status} className={`${frame} p-5`}><div className="mb-6 flex items-center justify-between"><Badge>{status}</Badge><span className="font-display text-2xl text-[#dfc18c]">{String(missions.filter(m => m.status === status).length).padStart(2, '0')}</span></div><div className="space-y-5">{missions.map((m, i) => m.status === status && <article key={m.name} className="border-t border-[#c5a56d]/20 pt-5"><h3 className="font-display text-2xl">{m.name}</h3><p className="my-3 text-sm text-stone-300">{villains[m.villain].name} / {m.location}</p><Badge>{m.threat}</Badge><div className="my-5"><Bar value={status === 'COMPLETED' ? 100 : status === 'IN PROGRESS' ? 50 : 0} color={status === 'COMPLETED' ? '#84bb96' : gold} /></div><p className="mb-4 text-xs leading-6 text-stone-300">{m.team.length ? m.team.map(id => heroes[id].name).join(' · ') : 'Awaiting an extraordinary team.'}</p><select aria-label={`Update ${m.name} status`} value={status} onChange={e => updateStatus(i, e.target.value)} className={`${btn} w-full bg-[#171811]`}><option>PENDING</option><option>IN PROGRESS</option><option>COMPLETED</option></select></article>)}</div>{!missions.some(m => m.status === status) && <p className="py-12 text-center font-display text-xl italic text-stone-300">The story is yet to be written.</p>}</section>)}</div><section className={`${frame} mt-10 p-7`}><p className="mb-3 text-xs uppercase tracking-[.2em] text-[#dfc18c]">The living archive</p><h2 className="mb-7 font-display text-3xl">Moments that matter.</h2><div className="space-y-5">{timeline.map((entry, i) => <div key={`${i}-${entry}`} className="flex items-start gap-4 text-sm leading-6 text-stone-300"><span className="mt-2 h-1.5 w-1.5 shrink-0 rotate-45 bg-[#c5a56d]" />{entry}</div>)}</div></section></>}
+        {page === 6 && <><div className="grid gap-6 lg:grid-cols-3">{['PENDING', 'IN PROGRESS', 'COMPLETED'].map(status => <section key={status} className={`${frame} p-5`}><div className="mb-6 flex items-center justify-between"><Badge>{status}</Badge><span className="font-display text-2xl text-[#dfc18c]">{String(missions.filter(m => m.status === status).length).padStart(2, '0')}</span></div><div className="space-y-5">{missions.map((m, i) => m.status === status && <article key={m.name} className="border-t border-[#c5a56d]/20 pt-5"><h3 className="font-display text-2xl">{m.name}</h3><p className="my-3 text-sm text-stone-300">{villains[m.villain].name} / {m.location}</p><Badge>{m.threat}</Badge><div className="my-5"><Bar value={status === 'COMPLETED' ? 100 : status === 'IN PROGRESS' ? 50 : 0} color={status === 'COMPLETED' ? '#84bb96' : gold} /></div><p className="mb-4 text-xs leading-6 text-stone-300">{m.team.length ? m.team.map(id => heroes[id].name).join(' · ') : 'Awaiting an extraordinary team.'}</p><select aria-label={`Update ${m.name} status`} value={status} disabled={!apiReady || apiBusy} onChange={e => updateStatus(i, e.target.value)} className={`${btn} w-full bg-[#171811]`}><option>PENDING</option><option>IN PROGRESS</option><option>COMPLETED</option></select></article>)}</div>{!missions.some(m => m.status === status) && <p className="py-12 text-center font-display text-xl italic text-stone-300">The story is yet to be written.</p>}</section>)}</div><section className={`${frame} mt-10 p-7`}><p className="mb-3 text-xs uppercase tracking-[.2em] text-[#dfc18c]">The living archive</p><h2 className="mb-7 font-display text-3xl">Moments that matter.</h2><div className="space-y-5">{timeline.map((entry, i) => <div key={`${i}-${entry}`} className="flex items-start gap-4 text-sm leading-6 text-stone-300"><span className="mt-2 h-1.5 w-1.5 shrink-0 rotate-45 bg-[#c5a56d]" />{entry}</div>)}</div></section></>}
         {page === 7 && <div className="grid gap-8 xl:grid-cols-[.85fr_1.35fr]">
-          <section className={`${frame} relative isolate overflow-hidden p-7 text-center md:p-10`}><div className="jarvis-grid absolute inset-0 -z-10 opacity-35" /><p className="text-xs uppercase tracking-[.3em] text-cyan-200">Artificial intelligence / online</p><div className="my-8 flex justify-center"><JarvisCore /></div><h2 className="font-display text-4xl text-white">Just A Rather Very<br /><em className="text-cyan-200">Intelligent System.</em></h2><p className="mx-auto mt-5 max-w-md text-sm leading-7 text-stone-300">A local tactical interface connected to your current squad, mission state, adversary archive, and combat simulator.</p><div className="mt-8 grid grid-cols-3 gap-3">{[['Systems', '100%'], ['Threats', String(missions.filter(m => m.status !== 'COMPLETED').length).padStart(2, '0')], ['Squad', String(team.length).padStart(2, '0')]].map(([label, value]) => <div key={label} className="border border-cyan-200/15 bg-cyan-300/5 p-3"><p className="font-display text-2xl text-cyan-100">{value}</p><p className="mt-1 text-[10px] uppercase tracking-widest text-stone-300">{label}</p></div>)}</div></section>
-          <section className={`${frame} flex min-h-[620px] flex-col overflow-hidden`}><div className="flex items-center justify-between border-b border-cyan-200/15 bg-cyan-300/5 px-5 py-4"><div className="flex items-center gap-3"><Activity className="text-cyan-200" size={18} /><div><p className="text-xs uppercase tracking-[.2em] text-cyan-100">JARVIS command terminal</p><p className="mt-1 text-xs text-stone-300">Encrypted local intelligence channel</p></div></div><span className="flex items-center gap-2 text-xs text-emerald-200"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-300" />ONLINE</span></div>
+          <section className={`${frame} relative isolate overflow-hidden p-7 text-center md:p-10`}><div className="jarvis-grid absolute inset-0 -z-10 opacity-35" /><p className="text-xs uppercase tracking-[.3em] text-cyan-200">Artificial intelligence / {geminiReady ? 'online' : 'setup required'}</p><div className="my-8 flex justify-center"><JarvisCore /></div><h2 className="font-display text-4xl text-white">Just A Rather Very<br /><em className="text-cyan-200">Intelligent System.</em></h2><p className="mx-auto mt-5 max-w-md text-sm leading-7 text-stone-300">A tactical interface connected to your current squad, mission state, adversary archive, and combat simulator.</p><div className="mt-8 grid grid-cols-3 gap-3">{[['Systems', apiReady ? 'ONLINE' : 'SETUP'], ['Threats', String(missions.filter(m => m.status !== 'COMPLETED').length).padStart(2, '0')], ['Squad', String(team.length).padStart(2, '0')]].map(([label, value]) => <div key={label} className="border border-cyan-200/15 bg-cyan-300/5 p-3"><p className="font-display text-2xl text-cyan-100">{value}</p><p className="mt-1 text-[10px] uppercase tracking-widest text-stone-300">{label}</p></div>)}</div></section>
+          <section className={`${frame} flex min-h-[620px] flex-col overflow-hidden`}><div className="flex items-center justify-between border-b border-cyan-200/15 bg-cyan-300/5 px-5 py-4"><div className="flex items-center gap-3"><Activity className="text-cyan-200" size={18} /><div><p className="text-xs uppercase tracking-[.2em] text-cyan-100">JARVIS command terminal</p><p className="mt-1 text-xs text-stone-300">{aiModel} · {geminiReady ? 'Gemini connected' : 'Gemini API key required'}</p></div></div><span className={`flex items-center gap-2 text-xs ${geminiReady ? 'text-emerald-200' : 'text-amber-200'}`}><span className={`h-2 w-2 rounded-full ${geminiReady ? 'animate-pulse bg-emerald-300' : 'bg-amber-300'}`} />{geminiReady ? 'AI ONLINE' : 'GEMINI SETUP'}</span></div>
             <div className="flex-1 space-y-5 overflow-y-auto p-5 md:p-7">{jarvisMessages.map((message, i) => <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} key={`${i}-${message.text}`} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}>{message.role === 'jarvis' && <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-cyan-200/25 bg-cyan-300/10"><Cpu size={16} className="text-cyan-100" /></span>}<div className={`max-w-[82%] border px-4 py-3 text-sm leading-7 ${message.role === 'user' ? 'border-[#c5a56d]/30 bg-[#c5a56d]/10 text-[#f0e7d7]' : 'border-cyan-200/15 bg-cyan-300/5 text-stone-200'}`}><p className="mb-1 text-[10px] uppercase tracking-[.2em] text-cyan-200">{message.role === 'user' ? 'Director' : 'JARVIS'}</p>{message.text}</div></motion.div>)}</div>
-            <div className="border-t border-cyan-200/15 p-4 md:p-5"><div className="mb-3 flex flex-wrap gap-2">{['Assess current threat', 'Recommend a squad', 'How do I win a battle?'].map(prompt => <button key={prompt} onClick={() => askJarvis(prompt)} className="border border-cyan-200/20 px-3 py-2 text-xs text-cyan-100 transition hover:bg-cyan-300/10">{prompt}</button>)}</div><form onSubmit={e => { e.preventDefault(); askJarvis(); }} className="flex gap-2"><input value={jarvisInput} onChange={e => setJarvisInput(e.target.value)} aria-label="Message JARVIS" placeholder="Enter a tactical query..." className="min-h-12 min-w-0 flex-1 border border-cyan-200/20 bg-black/30 px-4 text-sm outline-none focus:border-cyan-100" /><button className="grid min-h-12 min-w-12 place-items-center border border-cyan-100/40 bg-cyan-300/10 text-cyan-100 transition hover:bg-cyan-300/20" aria-label="Send to JARVIS"><Send size={18} /></button></form></div>
+            <div className="border-t border-cyan-200/15 p-4 md:p-5"><div className="mb-3 flex flex-wrap gap-2">{['Assess current threat', 'Recommend a squad', 'How do I win a battle?'].map(prompt => <button key={prompt} disabled={jarvisBusy} onClick={() => askJarvis(prompt)} className="border border-cyan-200/20 px-3 py-2 text-xs text-cyan-100 transition hover:bg-cyan-300/10 disabled:opacity-50">{prompt}</button>)}</div><form onSubmit={e => { e.preventDefault(); void askJarvis(); }} className="flex gap-2"><input value={jarvisInput} onChange={e => setJarvisInput(e.target.value)} aria-label="Message JARVIS" placeholder="Enter a tactical query..." disabled={jarvisBusy} className="min-h-12 min-w-0 flex-1 border border-cyan-200/20 bg-black/30 px-4 text-sm outline-none focus:border-cyan-100 disabled:opacity-60" /><button disabled={jarvisBusy || !jarvisInput.trim()} className="grid min-h-12 min-w-12 place-items-center border border-cyan-100/40 bg-cyan-300/10 text-cyan-100 transition hover:bg-cyan-300/20 disabled:opacity-50" aria-label="Send to JARVIS"><Send size={18} /></button></form>{jarvisBusy && <p role="status" className="mt-3 text-xs text-cyan-100">JARVIS is analyzing the current command data…</p>}</div>
           </section>
         </div>}
       </main>
     </motion.div></AnimatePresence>
-    <footer className="border-t border-[#c5a56d]/20 bg-[#090a08] px-6 pb-7 pt-12 text-center"><Shield className="mx-auto mb-5 text-[#c5a56d]" size={28} strokeWidth={1} /><p className="font-display text-2xl tracking-[.18em] text-[#dbc08d]">S.H.I.E.L.D.</p><p className="mt-3 text-xs uppercase tracking-[.22em] text-stone-300">Some protect a city. We protect a world.</p><div className="mx-auto my-7 flex max-w-2xl flex-wrap justify-center gap-x-7 gap-y-2">{chapters.map((name, i) => <button key={name} onClick={() => go(i)} className="min-h-11 text-xs text-stone-300 transition hover:text-[#e4c999]">{name}</button>)}</div><div className="mx-auto flex max-w-6xl flex-wrap justify-between gap-3 border-t border-[#c5a56d]/10 pt-6 text-xs text-stone-300"><span>AN INTERACTIVE AVENGERS FAN EXPERIENCE</span><span>LOCAL SIMULATION · YOUR PROGRESS STAYS IN THIS BROWSER</span><span>WHATEVER IT TAKES.</span></div></footer>
+    <footer className="border-t border-[#c5a56d]/20 bg-[#090a08] px-6 pb-7 pt-12 text-center"><img src={avengersLogo} alt="" className="mx-auto mb-4 h-12 w-12 rounded-full border border-[#c5a56d]/50 object-cover" /><p className="font-display text-2xl tracking-[.18em] text-[#dbc08d]">AVENGERS</p><p className="mt-3 text-xs uppercase tracking-[.22em] text-stone-300">Some protect a city. We protect a world.</p><div className="mx-auto my-7 flex max-w-2xl flex-wrap justify-center gap-x-7 gap-y-2">{chapters.map((name, i) => <button key={name} onClick={() => go(i)} className="min-h-11 text-xs text-stone-300 transition hover:text-[#e4c999]">{name}</button>)}</div><div className="mx-auto flex max-w-6xl flex-wrap justify-between gap-3 border-t border-[#c5a56d]/10 pt-6 text-xs text-stone-300"><span>AN INTERACTIVE AVENGERS FAN EXPERIENCE</span><span>LOCAL SIMULATION · YOUR PROGRESS STAYS IN THIS BROWSER</span><span>WHATEVER IT TAKES.</span></div></footer>
     {heroModal !== null && <Modal title={heroes[heroModal].name} close={() => setHeroModal(null)} wide><div className="grid gap-8 md:grid-cols-2"><Picture name={heroes[heroModal].name} className="h-full max-h-[550px] min-h-80 w-full object-top" /><div><p className="text-xs uppercase tracking-[.2em] text-[#dfc18c]">{heroes[heroModal].title}</p><h3 className="mb-5 mt-3 font-display text-3xl">{heroes[heroModal].real}</h3><Badge>{assigned.includes(heroModal) ? 'ASSIGNED' : 'AVAILABLE'}</Badge><p className="my-5 text-sm leading-7 text-stone-300">{heroes[heroModal].bio}</p><p className="mb-5 flex items-center gap-2 text-sm text-[#dfc18c]"><Zap size={17} />{heroes[heroModal].power}</p><div className="grid grid-cols-2 gap-x-5 gap-y-4">{[['Health', heroes[heroModal].hp, 360], ['Energy', 100, 100], ['Attack', heroes[heroModal].attack, 60], ['Defense', heroes[heroModal].defence, 30], ['Speed', heroes[heroModal].speed, 100], ['Intelligence', heroes[heroModal].intelligence, 100]].map(([label, value, max]) => <div key={label}><p className="mb-2 flex justify-between text-sm text-stone-300"><span>{label}</span><span className="text-[#dfc18c]">{value}</span></p><Bar value={Number(value)} max={Number(max)} /></div>)}</div><button className={`${primary} mt-7 w-full`} onClick={() => { if (!selected.includes(heroModal)) toggle(heroModal); setHeroModal(null); go(2); }}>Choose this Avenger <ArrowRight size={15} /></button></div></div></Modal>}
     {detail !== null && <Modal title={missions[detail].name} close={() => setDetail(null)}><Picture name={villains[missions[detail].villain].name} className="mb-6 h-60 w-full object-[center_20%]" /><Badge>{missions[detail].threat}</Badge><h3 className="mt-5 font-display text-3xl">{villains[missions[detail].villain].name}</h3><p className="my-5 text-sm leading-7 text-stone-300">{missions[detail].desc}</p><p className="text-sm text-[#dfc18c]">{missions[detail].location} · Recommended team: 4–6 heroes · Strength {250 - detail * 30}+</p><p className="mt-3 text-sm text-stone-300">Enemy special: {villains[missions[detail].villain].ability}. Triggers every third combat round.</p><button className={`${primary} mt-7`} onClick={() => { chooseMission(detail); setDetail(null); go(4); }}>Accept this quest <ArrowRight size={15} /></button></Modal>}
     {gallery && <Modal title="The Adversaries" close={() => { setGallery(false); setQuery(''); }} wide><p className="mb-6 text-sm text-stone-300">Twenty-five threats. Study their power. Choose your encounter.</p><label className="mb-7 flex items-center gap-3 border-b border-[#c5a56d]/30"><Search size={18} className="text-[#dfc18c]" /><input aria-label="Search villains" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search the archive..." className="min-h-12 w-full bg-transparent text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#c5a56d]" /></label><div className="grid gap-5 md:grid-cols-3">{villains.map((v, i) => ({ ...v, id: i })).filter(v => `${v.name} ${v.threat}`.toLowerCase().includes(query.toLowerCase())).map(v => <article key={v.name} className={`${frame} group overflow-hidden`}><Picture name={v.name} className="h-48 w-full object-top saturate-[.65] transition duration-500 group-hover:saturate-100" /><div className="p-4"><p className="text-xs tracking-widest text-[#dfc18c]">{v.threat} / {'✦'.repeat(v.difficulty)}</p><h3 className="mb-3 mt-2 font-display text-2xl">{v.name}</h3><p className="min-h-10 text-sm text-stone-300">{v.power}</p><p className="my-3 text-xs text-[#dfc18c]">{v.hp} HP · {v.attack} ATK · {v.defence} DEF</p><p className="mb-4 text-xs leading-6 text-stone-300">Special: {v.ability}</p><button className={`${enemy === v.id ? btn : primary} w-full px-2`} onClick={() => { setEnemy(v.id); setBattle(null); setGallery(false); go(5); notify(`${v.name} awaits you in the arena.`); }}>Select adversary <ArrowRight size={14} /></button></div></article>)}</div>{!villains.some(v => `${v.name} ${v.threat}`.toLowerCase().includes(query.toLowerCase())) && <p className="py-10 text-center text-stone-300">No adversaries match this search.</p>}</Modal>}

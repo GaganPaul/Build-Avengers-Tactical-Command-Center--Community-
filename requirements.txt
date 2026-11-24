@@ -1,0 +1,5 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+supabase>=2.13,<3
+google-genai>=1.47,<2
+python-dotenv>=1,<2
