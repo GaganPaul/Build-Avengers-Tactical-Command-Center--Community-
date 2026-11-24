@@ -1,0 +1,10 @@
+{
+  "description": "Manage Avengers squads, assign heroes to global threats, and play turn-based superhero battles in an interactive tactical command center.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

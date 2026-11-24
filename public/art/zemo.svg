@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1200" role="img" aria-labelledby="title desc">
+  <title id="title">Zemo tactical portrait</title>
+  <desc id="desc">An illustrated masked tactician in purple and antique gold armor.</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%"><stop stop-color="#554032"/><stop offset=".48" stop-color="#21172b"/><stop offset="1" stop-color="#090a09"/></radialGradient>
+    <linearGradient id="coat" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#33243f"/><stop offset=".5" stop-color="#120f18"/><stop offset="1" stop-color="#08090a"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f0d39b"/><stop offset=".45" stop-color="#a77b3e"/><stop offset="1" stop-color="#4e321a"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="12"/></filter>
+  </defs>
+  <rect width="800" height="1200" fill="url(#bg)"/>
+  <circle cx="400" cy="350" r="260" fill="none" stroke="#d4ad6b" stroke-opacity=".12" stroke-width="2"/>
+  <path d="M80 1200V930c0-185 118-305 320-305s320 120 320 305v270" fill="url(#coat)"/>
+  <path d="M111 1200V910l135-175 154 132 154-132 135 175v290" fill="none" stroke="#c79b58" stroke-opacity=".28" stroke-width="8"/>
+  <path d="M229 711 80 842l122 98 150-76zM571 711l149 131-122 98-150-76z" fill="#68596b"/>
+  <path d="M400 878 326 775l74-74 74 74z" fill="url(#gold)" stroke="#efd49b" stroke-width="5"/>
+  <path d="M233 210q28-124 167-137 139 13 167 137v332q-42 141-167 190-125-49-167-190z" fill="#4b245f" stroke="#bd8fca" stroke-width="5"/>
+  <path d="M274 352q126-79 252 0l-30 80H304z" fill="#17121d" stroke="#ceaa6e" stroke-width="5"/>
+  <path d="m305 376 68 6-31 28-44-7zm190 0-68 6 31 28 44-7z" fill="#e9cf9c"/>
+  <path d="M351 448h98l25 145-74 63-74-63z" fill="#321941" stroke="#8d5da1" stroke-width="4"/>
+  <path d="m351 510 49 28 49-28M336 594l64-21 64 21" fill="none" stroke="#c798cf" stroke-opacity=".65" stroke-width="6"/>
+  <path d="M230 255 133 392l95 38zm340 0 97 137-95 38z" fill="url(#gold)" stroke="#e2bd7d" stroke-width="4"/>
+  <path d="M92 1020h616" stroke="#d2a861" stroke-opacity=".2" stroke-width="3"/>
+  <circle cx="400" cy="400" r="305" fill="none" stroke="#e1b968" stroke-opacity=".18" stroke-width="18" filter="url(#glow)"/>
+</svg>

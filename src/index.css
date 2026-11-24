@@ -1,0 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Manrope:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Manrope', sans-serif;
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --breakpoint-md: 800px;
+}
+@keyframes damage {
+  0% { transform: translateY(12px) scale(.9); }
+  45% { transform: translateY(-12px) scale(1.1); }
+  100% { transform: translateY(0) scale(1); }
+}
+@keyframes embers {
+  0%, 100% { transform: translate(0, 0); opacity: .4; }
+  50% { transform: translate(15px, -80px); opacity: 1; }
+}
+@keyframes enemyGlow {
+  0%, 100% { filter: brightness(1); }
+  35% { filter: brightness(1.65) saturate(1.4); transform: translateX(-5px) rotate(-.5deg); }
+  60% { transform: translateX(5px) rotate(.5deg); }
+}
+@keyframes corePulse {
+  0%, 100% { box-shadow: inset 0 0 22px #64dcea66, 0 0 24px #42dbea44; }
+  50% { box-shadow: inset 0 0 32px #bffaff99, 0 0 50px #42dbea88; }
+}
+@keyframes orbit {
+  to { transform: rotate(360deg); }
+}
+@layer base {
+  button { cursor: pointer; }
+}
+.carousel-3d {
+  perspective: 1500px;
+  transform-style: preserve-3d;
+  scroll-snap-type: x mandatory;
+}
+.carousel-card {
+  display: grid;
+  transform-style: preserve-3d;
+  scroll-snap-align: start;
+  filter: drop-shadow(0 24px 30px #0009);
+}
+.carousel-card > button { height: 100%; }
+.carousel-stage {
+  position: relative;
+  height: 500px;
+  perspective: 1700px;
+  transform-style: preserve-3d;
+  overflow: hidden;
+}
+.villain-3d-card {
+  position: absolute;
+  left: 50%;
+  top: 20px;
+  width: min(310px, 64vw);
+  height: 430px;
+  overflow: hidden;
+  border: 1px solid #cfb07842;
+  background: #111;
+  transition: transform .7s cubic-bezier(.2,.8,.2,1), opacity .7s, filter .7s;
+  box-shadow: 0 35px 55px #000c;
+}
+.hero-3d-card {
+  position: absolute;
+  left: 50%;
+  top: 20px;
+  width: min(310px, 64vw);
+  height: 430px;
+  transform-style: preserve-3d;
+  transition: transform .7s cubic-bezier(.2,.8,.2,1), opacity .7s, filter .7s;
+  filter: drop-shadow(0 35px 35px #000c);
+}
+.hero-3d-card > button { height: 100%; width: 100%; background: #10110e; }
+.hero-3d-card > button > div:first-child { height: 350px; }
+.hero-stage { height: 500px; }
+.villain-3d-card:hover { border-color: #e9c98d; filter: saturate(1.15) brightness(1.08); }
+.position-0 { transform: translateX(calc(-50% - 560px)) translateZ(-260px) rotateY(38deg); opacity: .3; }
+.position-1 { transform: translateX(calc(-50% - 300px)) translateZ(-120px) rotateY(25deg); opacity: .68; }
+.position-2 { transform: translateX(-50%) translateZ(80px); z-index: 3; }
+.position-3 { transform: translateX(calc(-50% + 300px)) translateZ(-120px) rotateY(-25deg); opacity: .68; }
+.position-4 { transform: translateX(calc(-50% + 560px)) translateZ(-260px) rotateY(-38deg); opacity: .3; }
+.jarvis-core {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid #8ae9f355;
+  background: radial-gradient(circle, #8df6ff26 0 18%, #0a1d24 46%, #061014 70%);
+  color: #c9fbff;
+  animation: corePulse 2.8s ease-in-out infinite;
+}
+.jarvis-eye {
+  display: grid;
+  height: 46%;
+  width: 46%;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid #aaf8ff77;
+  background: #73e8f31c;
+}
+.jarvis-orbit { position: absolute; inset: 8%; border-radius: 999px; border: 1px dashed #75e8f366; animation: orbit 9s linear infinite; }
+.jarvis-orbit::after { content: ''; position: absolute; left: 50%; top: -3px; height: 6px; width: 6px; border-radius: 999px; background: #b9fbff; box-shadow: 0 0 12px #8af5ff; }
+.jarvis-orbit-two { inset: 17%; animation-duration: 6s; animation-direction: reverse; border-style: solid; border-color: #75e8f32e; }
+.jarvis-orbit-three { inset: -8%; animation-duration: 14s; border-color: #cfb07844; }
+.jarvis-grid {
+  background-image: linear-gradient(#66e8f10b 1px, transparent 1px), linear-gradient(90deg, #66e8f10b 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(circle, black, transparent 78%);
+}
+@media (max-width: 800px) {
+  .carousel-stage { height: 450px; }
+  .position-0, .position-4 { opacity: 0; }
+  .position-1 { transform: translateX(calc(-50% - 180px)) translateZ(-160px) rotateY(35deg); opacity: .45; }
+  .position-3 { transform: translateX(calc(-50% + 180px)) translateZ(-160px) rotateY(-35deg); opacity: .45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jarvis-core, .jarvis-orbit { animation: none; }
+}

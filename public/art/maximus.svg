@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1200" role="img" aria-labelledby="title desc">
+  <title id="title">Maximus royal portrait</title>
+  <desc id="desc">An illustrated unstable royal inventor in dark futuristic armor.</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="25%"><stop stop-color="#45535b"/><stop offset=".42" stop-color="#1d292d"/><stop offset="1" stop-color="#080a0b"/></radialGradient>
+    <linearGradient id="armor" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#60727a"/><stop offset=".28" stop-color="#182328"/><stop offset=".62" stop-color="#080d10"/><stop offset="1" stop-color="#3f3121"/></linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d7a578"/><stop offset=".55" stop-color="#9b6748"/><stop offset="1" stop-color="#493024"/></linearGradient>
+    <linearGradient id="gold"><stop stop-color="#f3d28b"/><stop offset=".5" stop-color="#9b7437"/><stop offset="1" stop-color="#3f2e18"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="14"/></filter>
+  </defs>
+  <rect width="800" height="1200" fill="url(#bg)"/>
+  <path d="M100 860 32 275l368-170 368 170-68 585-300 245z" fill="none" stroke="#b7d6d8" stroke-opacity=".12" stroke-width="5"/>
+  <path d="M58 1200V918q0-190 191-280l151 95 151-95q191 90 191 280v282" fill="url(#armor)"/>
+  <path d="m86 1200 46-286 185-149 83 97 83-97 185 149 46 286" fill="none" stroke="#bacbd0" stroke-opacity=".32" stroke-width="9"/>
+  <path d="m210 695 107 70-81 146-154-16zm380 0-107 70 81 146 154-16z" fill="#87969a" stroke="#cfb776" stroke-width="5"/>
+  <path d="M400 854 342 787l58-52 58 52z" fill="url(#gold)" stroke="#edd498" stroke-width="5"/>
+  <path d="M247 246q10-156 153-167 143 11 153 167v267q-27 153-153 190-126-37-153-190z" fill="url(#skin)" stroke="#c59b78" stroke-width="4"/>
+  <path d="M225 274q24-220 175-220 151 0 175 220-52-77-116-84l-15 70-37-75-43 79-12-75q-72 16-127 85z" fill="#11191d" stroke="#6f8087" stroke-width="5"/>
+  <path d="M279 373q55-42 104 4l-19 19-74-3zm242 0q-55-42-104 4l19 19 74-3z" fill="#0a1012"/>
+  <path d="m294 382 35-7 28 10-29 18zM506 382l-35-7-28 10 29 18z" fill="#9cf3f5"/>
+  <path d="M357 433h86l28 72-71 25-71-25z" fill="#a06e50"/>
+  <path d="M315 568q85 56 170 0-24 91-85 93-61-2-85-93z" fill="#3a211d"/>
+  <path d="M335 581q65 27 130 0" stroke="#e0b291" stroke-width="8"/>
+  <path d="M202 321 97 436l126 26m375-141 105 115-126 26" fill="none" stroke="#a8f0ef" stroke-opacity=".55" stroke-width="7"/>
+  <path d="M100 1000h600M156 1060h488" stroke="#8be5e8" stroke-opacity=".18" stroke-width="3"/>
+  <ellipse cx="400" cy="405" rx="275" ry="330" fill="none" stroke="#8af4ef" stroke-opacity=".15" stroke-width="18" filter="url(#glow)"/>
+</svg>
